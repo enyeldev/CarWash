@@ -14,15 +14,18 @@ datasource db {
 }
 
 model User {
-  id            String    @id
-  name          String
-  email         String
-  emailVerified Boolean   @default(false)
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  sessions      Session[]
-  accounts      Account[]
+  id             String         @id
+  name           String
+  email          String
+  emailVerified  Boolean        @default(false)
+  image          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  sessions       Session[]
+  accounts       Account[]
+  companyUsers   CompanyUser[]
+  sales          Sale[]
+  closeHistories CloseHistory[]
 
   @@unique([email])
   @@map("user")
@@ -74,4 +77,249 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+model Company {
+  id        String    @id @default(uuid())
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  users          CompanyUser[]
+  roles          Role[]
+  products       Product[]
+  sales          Sale[]
+  items          Item[]
+  services       Service[]
+  washMen        WashMan[]
+  tickets        Ticket[]
+  closeHistories CloseHistory[]
+
+  @@map("company")
+}
+
+model CompanyUser {
+  // id        String    @id @default(uuid())
+  companyId String
+  userId    String
+  roleId    String
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+  eole    Role    @relation(fields: [roleId], references: [id])
+
+  @@id([companyId, userId])
+  @@index([userId])
+  @@map("companyUser")
+}
+
+model Role {
+  id        String    @id @default(uuid())
+  name      String
+  companyId String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  company         Company          @relation(fields: [companyId], references: [id])
+  users           CompanyUser[]
+  rolePermissions RolePermission[]
+
+  @@unique([companyId, name])
+  @@map("role")
+}
+
+model RolePermission {
+  permissionId String
+  roleId       String
+
+  permission Permission @relation(fields: [permissionId], references: [id])
+  role       Role       @relation(fields: [roleId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("rolePermission")
+}
+
+model Permission {
+  id          String    @id @default(uuid())
+  name        String
+  description String
+  key         String    @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  rolePermissions RolePermission[]
+
+  @@map("permission")
+}
+
+enum ProductStatus {
+  FINISHED
+  AVAILABLE
+  WARNING
+  DELETED
+}
+
+model Product {
+  id          String        @id @default(uuid())
+  name        String
+  description String?
+  status      ProductStatus @default(AVAILABLE)
+  img         String?
+  companyId   String
+  itemId      String        @unique
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  item          Item           @relation(fields: [itemId], references: [id])
+  productStocks ProductStock[]
+
+  @@index([companyId])
+  @@map("product")
+}
+
+model ProductStock {
+  id        String  @id @default(uuid())
+  quantity  Int
+  price     Decimal
+  productId String
+
+  Product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_stock")
+}
+
+model Sale {
+  id        String   @id @default(uuid())
+  total     Decimal
+  paidWith  String
+  soldAt    DateTime @default(now())
+  companyId String
+  userId    String
+
+  company   Company    @relation(fields: [companyId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+  saleItems SaleItem[]
+
+  @@index([companyId, soldAt])
+  @@map("sale")
+}
+
+model SaleItem {
+  id       String  @id @default(uuid())
+  quantity Int
+  price    Decimal
+  saleId   String
+  itemId   String
+
+  sale Sale @relation(fields: [saleId], references: [id])
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@index([saleId])
+  @@map("sale_item")
+}
+
+enum ItemType {
+  PRODUCT
+  SERVICE
+}
+
+model Item {
+  id        String    @id @default(uuid())
+  companyId String
+  type      ItemType
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  product   Product?
+  service   Service?
+  saleItems SaleItem[]
+
+  @@index([companyId, type])
+  @@map("item")
+}
+
+model Service {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal
+  companyId   String
+  itemId      String  @unique
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  item          Item           @relation(fields: [itemId], references: [id])
+  ticketServies TicketServie[]
+
+  @@index([companyId])
+  @@map("service")
+}
+
+model TicketServie {
+  ticketId  String
+  serviceId String
+
+  ticket  Ticket  @relation(fields: [ticketId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@id([ticketId, serviceId])
+  @@map("ticketService")
+}
+
+model Ticket {
+  id             String    @id @default(uuid())
+  carDescription String
+  carPlate       String
+  ownerName      String
+  ownerPhone     String
+  ownerEmail     String
+  arrivedAt      DateTime  @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  companyId      String
+  washManId      String
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  washMan       WashMan        @relation(fields: [washManId], references: [id])
+  ticketServies TicketServie[]
+
+  @@index([companyId, arrivedAt])
+  @@map("ticket")
+}
+
+model WashMan {
+  id        String   @id @default(uuid())
+  name      String
+  document  String?
+  salary    Decimal?
+  companyId String
+
+  company Company  @relation(fields: [companyId], references: [id])
+  tickets Ticket[]
+
+  @@map("wash_man")
+}
+
+model CloseHistory {
+  id            String   @id @default(uuid())
+  openingAmount Decimal
+  closingAmount Decimal
+  openedAt      DateTime
+  closedAt      DateTime @default(now())
+  userId        String
+  companyId     String
+
+  user    User    @relation(fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, closedAt])
+  @@map("closeHistory")
 }
