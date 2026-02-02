@@ -13,12 +13,33 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserPlan {
+  BASIC
+  PRO
+  ADVANCE
+}
+
+enum SubscriptionStatus {
+  ACTIVE // active
+  CANCELED // canceled
+  PAST_DUE // unpaid o past_due (pago fallido pero intentando)
+  TRAILING // trialing
+  INCOMPLETE // incomplete (cuando se requiere 3DS / verificación bancaria)
+}
+
 model User {
-  id             String         @id
-  name           String
-  email          String
-  emailVerified  Boolean        @default(false)
-  image          String?
+  id                 String             @id
+  name               String
+  email              String
+  emailVerified      Boolean            @default(false)
+  image              String?
+  plan               UserPlan           @default(BASIC)
+  trialEndsAt        DateTime?          @default(dbgenerated("now() + interval '14 days'"))
+  subscriptionStatus SubscriptionStatus @default(TRAILING)
+
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   sessions       Session[]
@@ -80,8 +101,10 @@ model Verification {
 }
 
 model Company {
-  id        String    @id @default(uuid())
-  name      String
+  id    String @id @default(uuid())
+  name  String
+  phone String
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -109,7 +132,7 @@ model CompanyUser {
 
   company Company @relation(fields: [companyId], references: [id])
   user    User    @relation(fields: [userId], references: [id])
-  eole    Role    @relation(fields: [roleId], references: [id])
+  role    Role    @relation(fields: [roleId], references: [id])
 
   @@id([companyId, userId])
   @@index([userId])
