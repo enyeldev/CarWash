@@ -58,9 +58,6 @@ export async function signInWithSocialAction({
 }) {
   try {
     const result = await signInWithSocialService({ provider });
-
-    console.log(result);
-
     // const session = await getSessionAction();
 
     // console.log(session);

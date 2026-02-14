@@ -19,7 +19,7 @@ export async function sendEmail({
   try {
     const { data, error } = await resend.emails.send({
       from: "WashPro <onboarding@resend.dev>",
-      to: ["medranogarciaenyel@gmail.com"],
+      to: [process.env.CORREO_RESEND??""],
       subject: subject,
       html,
     });
