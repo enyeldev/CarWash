@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -13,49 +7,71 @@ datasource db {
   provider = "postgresql"
 }
 
+// --- ENUMS ---
+
 enum UserPlan {
+  FREE
   BASIC
   PRO
-  ADVANCE
+  CUSTOM
 }
 
 enum SubscriptionStatus {
-  ACTIVE // active
-  CANCELED // canceled
-  PAST_DUE // unpaid o past_due (pago fallido pero intentando)
-  TRAILING // trialing
-  INCOMPLETE // incomplete (cuando se requiere 3DS / verificación bancaria)
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  TRAILING
+  INCOMPLETE
 }
 
+enum MemberRole {
+  OWNER // Dueño: Acceso total y gestión de suscripción
+  ADMIN // Gerente: Gestión de empleados y configuración
+  CASHIER // Cajero: Ventas, tickets y reportes diarios
+  VIEWER // Auditor: Solo lectura de reportes
+}
+
+enum ProductStatus {
+  AVAILABLE
+  WARNING
+  OUT_OF_STOCK
+  DELETED
+}
+
+enum ItemType {
+  PRODUCT
+  SERVICE
+}
+
+enum InventoryAction {
+  ADD
+  REMOVE
+  ADJUSTMENT
+}
+
+// --- NÚCLEO DE AUTENTICACIÓN (Better Auth) ---
+
 model User {
-  id                 String             @id
-  name               String
-  email              String
-  emailVerified      Boolean            @default(false)
-  image              String?
-  plan               UserPlan           @default(BASIC)
-  trialEndsAt        DateTime?          @default(dbgenerated("now() + interval '14 days'"))
-  subscriptionStatus SubscriptionStatus @default(TRAILING)
+  id            String  @id
+  name          String
+  email         String  @unique
+  emailVerified Boolean @default(false)
+  image         String?
 
-  stripeCustomerId     String? @unique
-  stripeSubscriptionId String? @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  sessions       Session[]
-  accounts       Account[]
-  companyUsers   CompanyUser[]
-  sales          Sale[]
-  closeHistories CloseHistory[]
+  sessions    Session[]
+  accounts    Account[]
+  memberships Member[] // Un usuario puede ser miembro de múltiples CarWashes
 
-  @@unique([email])
   @@map("user")
 }
 
 model Session {
   id        String   @id
   expiresAt DateTime
-  token     String
+  token     String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   ipAddress String?
@@ -63,7 +79,6 @@ model Session {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([token])
   @@index([userId])
   @@map("session")
 }
@@ -100,91 +115,93 @@ model Verification {
   @@map("verification")
 }
 
+// --- MULTI-TENANCY (Estructura de Negocio) ---
+
 model Company {
-  id    String @id @default(uuid())
-  name  String
-  phone String
+  id          String  @id @default(uuid())
+  name        String
+  phone       String
+  description String?
+
+  // Suscripción ligada a la empresa
+  plan                 UserPlan           @default(FREE)
+  trialEndsAt          DateTime?          @default(dbgenerated("now() + interval '14 days'"))
+  subscriptionStatus   SubscriptionStatus @default(TRAILING)
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  users          CompanyUser[]
-  roles          Role[]
-  products       Product[]
-  sales          Sale[]
-  items          Item[]
-  services       Service[]
-  washMen        WashMan[]
-  tickets        Ticket[]
-  closeHistories CloseHistory[]
+  members      Member[]
+  invitations  Invitation[]
+  products     Product[]
+  services     Service[]
+  items        Item[]
+  sales        Sale[]
+  washMen      WashMan[]
+  tickets      Ticket[]
+  cashSessions CashSession[]
 
   @@map("company")
 }
 
-model CompanyUser {
-  // id        String    @id @default(uuid())
+model Member {
+  id       String     @id @default(uuid())
+  role     MemberRole @default(CASHIER)
+  isActive Boolean    @default(true)
+
   companyId String
   userId    String
-  roleId    String
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
 
-  company Company @relation(fields: [companyId], references: [id])
-  user    User    @relation(fields: [userId], references: [id])
-  role    Role    @relation(fields: [roleId], references: [id])
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@id([companyId, userId])
+  // Trazabilidad: Quién hizo qué
+  sales          Sale[]
+  inventoryLogs  InventoryLog[]
+  openedSessions CashSession[]  @relation("Opener")
+  closedSessions CashSession[]  @relation("Closer")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, userId])
   @@index([userId])
-  @@map("companyUser")
+  @@map("member")
 }
 
-model Role {
-  id        String    @id @default(uuid())
-  name      String
+model Invitation {
+  id        String     @id @default(uuid())
+  email     String? // Opcional para links manuales
+  role      MemberRole @default(CASHIER)
+  token     String     @unique
   companyId String
+  expiresAt DateTime
+  accepted  Boolean    @default(false)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("invitation")
+}
+
+// --- INVENTARIO Y SERVICIOS ---
+
+model Item {
+  id        String    @id @default(uuid())
+  companyId String
+  type      ItemType
   createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  company         Company          @relation(fields: [companyId], references: [id])
-  users           CompanyUser[]
-  rolePermissions RolePermission[]
+  company   Company    @relation(fields: [companyId], references: [id])
+  product   Product?
+  service   Service?
+  saleItems SaleItem[]
 
-  @@unique([companyId, name])
-  @@map("role")
-}
-
-model RolePermission {
-  permissionId String
-  roleId       String
-
-  permission Permission @relation(fields: [permissionId], references: [id])
-  role       Role       @relation(fields: [roleId], references: [id])
-
-  @@id([roleId, permissionId])
-  @@map("rolePermission")
-}
-
-model Permission {
-  id          String    @id @default(uuid())
-  name        String
-  description String
-  key         String    @unique
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-
-  rolePermissions RolePermission[]
-
-  @@map("permission")
-}
-
-enum ProductStatus {
-  FINISHED
-  AVAILABLE
-  WARNING
-  DELETED
+  @@index([companyId, type])
+  @@map("item")
 }
 
 model Product {
@@ -192,16 +209,16 @@ model Product {
   name        String
   description String?
   status      ProductStatus @default(AVAILABLE)
-  img         String?
-  companyId   String
-  itemId      String        @unique
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  deletedAt   DateTime?
+  image       String?
 
-  company       Company        @relation(fields: [companyId], references: [id])
-  item          Item           @relation(fields: [itemId], references: [id])
-  productStocks ProductStock[]
+  companyId String
+  itemId    String @unique
+
+  company Company @relation(fields: [companyId], references: [id])
+  item    Item    @relation(fields: [itemId], references: [id])
+
+  stock         ProductStock?
+  inventoryLogs InventoryLog[]
 
   @@index([companyId])
   @@map("product")
@@ -209,25 +226,130 @@ model Product {
 
 model ProductStock {
   id        String  @id @default(uuid())
-  quantity  Int
-  price     Decimal
-  productId String
+  quantity  Int     @default(0)
+  price     Decimal @db.Decimal(10, 2)
+  productId String  @unique
 
-  Product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("product_stock")
 }
 
-model Sale {
-  id        String   @id @default(uuid())
-  total     Decimal
-  paidWith  String
-  soldAt    DateTime @default(now())
+model InventoryLog {
+  id        String          @id @default(uuid())
+  quantity  Int
+  action    InventoryAction
+  reason    String?
+  createdAt DateTime        @default(now())
+
+  productId String
+  memberId  String // Quién movió el stock
+
+  product Product @relation(fields: [productId], references: [id])
+  member  Member  @relation(fields: [memberId], references: [id])
+
+  @@map("inventory_log")
+}
+
+model Service {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal @db.Decimal(10, 2)
+
   companyId String
-  userId    String
+  itemId    String @unique
+
+  company Company @relation(fields: [companyId], references: [id])
+  item    Item    @relation(fields: [itemId], references: [id])
+
+  ticketServices TicketService[]
+
+  @@index([companyId])
+  @@map("service")
+}
+
+// --- OPERACIONES DE LAVADO ---
+
+model WashMan {
+  id        String  @id @default(uuid())
+  name      String
+  document  String?
+  phone     String?
+  isActive  Boolean @default(true)
+  companyId String
+
+  company Company  @relation(fields: [companyId], references: [id])
+  tickets Ticket[]
+
+  @@map("wash_man")
+}
+
+model Ticket {
+  id             String  @id @default(uuid())
+  carDescription String
+  carPlate       String
+  ownerName      String?
+  ownerPhone     String?
+
+  status     String    @default("PENDING") // PENDING, WASHING, READY, DELIVERED
+  arrivedAt  DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  companyId String
+  washManId String
+
+  company  Company         @relation(fields: [companyId], references: [id])
+  washMan  WashMan         @relation(fields: [washManId], references: [id])
+  services TicketService[]
+
+  @@index([companyId, arrivedAt])
+  @@map("ticket")
+}
+
+model TicketService {
+  ticketId  String
+  serviceId String
+
+  ticket  Ticket  @relation(fields: [ticketId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@id([ticketId, serviceId])
+  @@map("ticket_service")
+}
+
+// --- VENTAS Y CAJA ---
+
+model CashSession {
+  id            String    @id @default(uuid())
+  openingAmount Decimal   @db.Decimal(10, 2)
+  closingAmount Decimal?  @db.Decimal(10, 2)
+  openedAt      DateTime  @default(now())
+  closedAt      DateTime?
+
+  companyId  String
+  openedById String
+  closedById String?
+
+  company  Company @relation(fields: [companyId], references: [id])
+  openedBy Member  @relation("Opener", fields: [openedById], references: [id])
+  closedBy Member? @relation("Closer", fields: [closedById], references: [id])
+
+  @@map("cash_session")
+}
+
+model Sale {
+  id       String   @id @default(uuid())
+  total    Decimal  @db.Decimal(10, 2)
+  paidWith String // CASH, CARD, TRANSFER
+  soldAt   DateTime @default(now())
+
+  companyId String
+  memberId  String // El empleado que hizo la venta
 
   company   Company    @relation(fields: [companyId], references: [id])
-  user      User       @relation(fields: [userId], references: [id])
+  member    Member     @relation(fields: [memberId], references: [id])
   saleItems SaleItem[]
 
   @@index([companyId, soldAt])
@@ -237,112 +359,13 @@ model Sale {
 model SaleItem {
   id       String  @id @default(uuid())
   quantity Int
-  price    Decimal
-  saleId   String
-  itemId   String
+  price    Decimal @db.Decimal(10, 2)
+
+  saleId String
+  itemId String
 
   sale Sale @relation(fields: [saleId], references: [id])
   item Item @relation(fields: [itemId], references: [id])
 
-  @@index([saleId])
   @@map("sale_item")
-}
-
-enum ItemType {
-  PRODUCT
-  SERVICE
-}
-
-model Item {
-  id        String    @id @default(uuid())
-  companyId String
-  type      ItemType
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
-
-  company Company @relation(fields: [companyId], references: [id])
-
-  product   Product?
-  service   Service?
-  saleItems SaleItem[]
-
-  @@index([companyId, type])
-  @@map("item")
-}
-
-model Service {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  price       Decimal
-  companyId   String
-  itemId      String  @unique
-
-  company       Company        @relation(fields: [companyId], references: [id])
-  item          Item           @relation(fields: [itemId], references: [id])
-  ticketServies TicketServie[]
-
-  @@index([companyId])
-  @@map("service")
-}
-
-model TicketServie {
-  ticketId  String
-  serviceId String
-
-  ticket  Ticket  @relation(fields: [ticketId], references: [id])
-  service Service @relation(fields: [serviceId], references: [id])
-
-  @@id([ticketId, serviceId])
-  @@map("ticketService")
-}
-
-model Ticket {
-  id             String    @id @default(uuid())
-  carDescription String
-  carPlate       String
-  ownerName      String
-  ownerPhone     String
-  ownerEmail     String
-  arrivedAt      DateTime  @default(now())
-  startedAt      DateTime?
-  finishedAt     DateTime?
-  companyId      String
-  washManId      String
-
-  company       Company        @relation(fields: [companyId], references: [id])
-  washMan       WashMan        @relation(fields: [washManId], references: [id])
-  ticketServies TicketServie[]
-
-  @@index([companyId, arrivedAt])
-  @@map("ticket")
-}
-
-model WashMan {
-  id        String   @id @default(uuid())
-  name      String
-  document  String?
-  salary    Decimal?
-  companyId String
-
-  company Company  @relation(fields: [companyId], references: [id])
-  tickets Ticket[]
-
-  @@map("wash_man")
-}
-
-model CloseHistory {
-  id            String   @id @default(uuid())
-  openingAmount Decimal
-  closingAmount Decimal
-  openedAt      DateTime
-  closedAt      DateTime @default(now())
-  userId        String
-  companyId     String
-
-  user    User    @relation(fields: [userId], references: [id])
-  company Company @relation(fields: [companyId], references: [id])
-
-  @@index([companyId, closedAt])
-  @@map("closeHistory")
 }

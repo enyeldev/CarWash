@@ -1,10 +1,10 @@
-import { OnboardingForm } from "@/components/onboarding/onBoardginForm";
+import { WelcomeStep } from "@/components/onboarding/steps/WelcomeStep";
 
 const OnBoardingPage = () => {
   return (
     <>
       <div>
-        <OnboardingForm />
+        <WelcomeStep />
       </div>
     </>
   );

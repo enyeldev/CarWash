@@ -9,7 +9,12 @@ const DashboardLayout = async ({ children }: { children: ReactNode }) => {
     redirect("/login");
   }
 
-  await userHasCompanyAction({ userId: session.data.user.id });
+  const companies = await userHasCompanyAction({
+    userId: session.data.user.id,
+  });
+
+  console.log(companies);
+
   return (
     <>
       <div>DashboardLayout</div>

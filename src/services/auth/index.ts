@@ -117,7 +117,11 @@ export async function userHasCompanyService({
       id: userId,
     },
     select: {
-      companyUsers: true,
+      memberships: {
+        select: {
+          company: true,
+        },
+      },
     },
   });
 

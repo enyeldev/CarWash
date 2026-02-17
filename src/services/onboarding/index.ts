@@ -1,18 +1,37 @@
-import { ActionResult, mapErrorToPayload } from "@/src/lib/errors";
+import { User } from "@/src/generated/prisma/client";
+import { ValidationAppError } from "@/src/lib/errors";
 import { prisma } from "@/src/lib/prisma";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { createCarWashFromSchema } from "@/src/schema/onBoarding";
 
+export async function createNewCarWashService(
+  data: unknown,
+  userId: User["id"],
+) {
+  const result = createCarWashFromSchema.safeParse(data);
+  if (!result.success) {
+    throw new ValidationAppError(result.error.issues, "Error de schema");
+  }
 
-// export async function createNewCarWashService(data: unknown):
-//   Promise<ActionResult<SignInResponse>> {
-//     try {
-//       const result = await singInWithEmailService(data);
-//       await userHasCompanyAction({ userId: result.user.id });
-  
-//       return { ok: true, data: result };
-//     } catch (error) {
-//       if (isRedirectError(error)) {
-//         throw error;
-//       }
-//       return { ok: false, error: mapErrorToPayload(error) };
-//     }
+  const { data: dataCarWash } = result;
+
+  const response = await prisma.company.create({
+    data: {
+      ...dataCarWash,
+      members: {
+        create: {
+          userId,
+          role: "OWNER",
+        },
+      },
+    },
+    include: {
+      members: {
+        include: {
+          user: true,
+        },
+      },
+    },
+  });
+
+  return response;
+}

@@ -20,3 +20,5 @@ export type SocialAuthProviders = "google";
 export type ForgotPasswordType = z.infer<typeof forgotPasswordSchema>;
 
 export type ResetPasswordType = z.infer<typeof resetPasswordSchema>;
+
+export type UserSession = Awaited<ReturnType<typeof auth.api.getSession>>;

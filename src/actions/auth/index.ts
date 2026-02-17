@@ -1,11 +1,7 @@
 "use server";
 
 import { User } from "@/src/generated/prisma/client";
-import {
-  ActionResult,
-  mapErrorToPayload,
-  UnauthorizedError,
-} from "@/src/lib/errors";
+import { ActionResult, mapErrorToPayload } from "@/src/lib/errors";
 
 import {
   forgotPasswordEmailService,
@@ -102,9 +98,11 @@ export async function userHasCompanyAction({ userId }: { userId: User["id"] }) {
     userId,
   });
 
-  if (userHasCompany?.companyUsers.length === 0) {
+  if (userHasCompany?.memberships.length === 0) {
     redirect("/onboarding");
   }
+
+  return userHasCompany;
 }
 
 // Session
